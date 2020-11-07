@@ -50,6 +50,15 @@ end
 
 function Input(a)
         local f = a or f
+		local FutDate = {}
+		
+		FutDate.year = os.date('%Y')
+		FutDate.month = os.date('%m') + 3
+		FutDate.day = os.date('%d')
+		if FutDate.month > 12 then
+			FutDate.year = FutDate.year + 1
+			FutDate.month = FutDate.month - 12
+		end
  
         local Raw = Feeds[f].Measure:GetStringValue()
        
@@ -173,11 +182,12 @@ function Input(a)
                         end
                 end
  
-                -- ADD NEW ITEMS
+				-- ADD NEW ITEMS
 				for i = #Items, 1, -1 do
 					if Items[i] then
-						if t == 'iCalendar' then
-							if (Items[i].Date > os.time()) then
+						if t == 'iCalendar' then	
+						
+							if (Items[i].Date > os.time()) and (Items[i].Date < os.time(FutDate)) then
 								table.insert(Feeds[f], 1, Items[i])
 							end
 						else
@@ -234,7 +244,7 @@ function Output()
 
 	-- CHECK FOR INPUT ERRORS
 	local MinItems  = SELF:GetNumberOption('MinItems', 0)
-	local Timestamp = SELF:GetOption('Timestamp', '%I:%M %p %A %b %d')
+	local Timestamp = SKIN:GetVariable('Timestamp', '%I:%M %p %A %b %d')
 
 	if Error then
 		-- ERROR; QUEUE MESSAGES
@@ -265,7 +275,6 @@ function Output()
 			Queue['Item'..i..'Desc']    = Item.Desc   or ''
 			Queue['Item'..i..'Unread']  = Item.Unread or ''
 			Queue['Item'..i..'Date']    = Item.Date and os.date(Timestamp, Item.Date) or ''
-			-- print(Item.Title..Item.Date)
 		end
 	end
 
@@ -387,7 +396,9 @@ function DefineTypes()
 			MatchItemDate = 'DTSTART.-UID',
 			MergeItems    = false,
 			ParseDate     = function(s)
-				local Date = {}
+			
+				local Date = {}				
+				local completeFeed = s	
 				
 				-- For finding the Offset
 				local DS = {}
@@ -408,7 +419,7 @@ function DefineTypes()
 				elseif s:match('FREQ=MONTHLY') then
 					Date.year = os.date('%Y')
 					Date.month = os.date('%m')
-					Date.day = s:match('DTSTART;VALUE=DATE:%d%d%d%d%d%d(%d%d)')
+					Date.day = s:match('DTSTART;VALUE=DATE:%d%d%d%d%d%d(%d%d)')  or 0
 					
 					-- If date is in the past then add a month
 					if os.time(Date) < os.time() then
@@ -419,6 +430,167 @@ function DefineTypes()
 							Date.year = Date.year + 1
 						end
 					end
+					return Date
+					
+				elseif s:match('FREQ=WEEKLY') then
+					Date.year = os.date('%Y')
+					Date.month = os.date('%m')					
+					Date.day = os.date('%d')
+					
+					-- EVENT END
+					local eventStart = {}
+					eventStart.year, eventStart.month, eventStart.day, eventStart.hour, eventStart.min, eventStart.sec = s:match('DTSTART[^\n]+:(%d%d%d%d)(%d%d)(%d%d)T(%d%d)(%d%d)(%d%d)')
+		
+					if (eventStart.day == nil) then
+						eventStart.year, eventStart.month, eventStart.day = s:match('DTSTART[^\n]+:(%d%d%d%d)(%d%d)(%d%d)')
+					end	
+					
+					-- Event END
+					local eventEnd = {}
+					eventEnd.year, eventEnd.month, eventEnd.day, eventEnd.hour, eventEnd.min, eventEnd.sec = s:match('DTEND[^\n]+:(%d%d%d%d)(%d%d)(%d%d)T(%d%d)(%d%d)(%d%d)')
+					
+					-- if (eventEnd.day == nil) then
+						-- eventEnd.year, eventEnd.month, eventEnd.day = s:match('DTEND[^\n]+:(%d%d%d%d)(%d%d)(%d%d)')
+					-- end	
+					
+					local untilEvent = {}
+					untilEvent.year, untilEvent.month, untilEvent.day, untilEvent.hour, untilEvent.min, untilEvent.sec = s:match('UNTIL=(%d%d%d%d)(%d%d)(%d%d)T(%d%d)(%d%d)(%d%d)')
+										
+					if (untilEvent.year ~= nil) then
+						-- print(s:match('UNTIL=[^\n]+'))
+						if (os.time(Date) > os.time(untilEvent)) then
+							Date.hour = untilEvent.hour or 0
+							Date.min = untilEvent.min or 0
+							Date.sec = eventStart.sec or 0
+							-- print('Event should not occur')
+							return DATE
+						end
+					end			
+		
+					Date.hour = eventStart.hour
+					Date.min = eventStart.min
+					Date.sec = eventStart.sec
+					--Date.Offset = DS.Offset					
+
+					
+					-- BY DAY
+					
+					local byDay = {'SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'} -- I hate american systems			
+					local actualDays = {}
+					
+					local currentDay = os.date("*t").wday
+					
+					local actualDaysCount = 0
+					
+					local dateFound = false
+					
+					-- START WITH CURRENT DATE
+					
+					-- CHECK IF DATE IS EXCLUDED
+					
+					-- IF IT IS NOT
+					
+					-- CHECK THE NEW DATE 
+					
+					-- E.G. T + 2, T + 3, T + 2 + 7, T + 3 + 7 
+					
+					-- 0 + 7 = 7 % 8 = 7
+					 
+					-- RINSE AND REPEAT UNTIL DATE WAS FOUND OR DATE EXCEEDS UNTIL EVENT DATE  
+					
+					local tableCount = 0
+					
+					for i = 0, 6 do
+						--print(((i + currentDay) % 7) + 1)
+						--print(tostring(byDay[((i + currentDay) % 7) + 1]))
+						if (s:match('RRULE[^\n]+BYDAY[^\n]+' .. tostring(byDay[(i + currentDay - 1) % 7 + 1]))) then
+							print('Registering table index: ' .. i .. ', ' .. tostring(byDay[i]))
+							local difference = i - currentDay
+							if (difference < 7) then
+								difference = difference + 7
+							end
+							actualDays[tableCount] = i
+							tableCount = tableCount + 1
+						end	
+					end	
+					
+					local currentDayModulo = ((currentDay - 1) % 7) + 1
+					
+					-- print(currentDay .. ', ' .. currentDayModulo .. ', ' .. tostring(byDay[currentDayModulo]))
+					
+					local weekMultiplier = 0						
+					local i = -1
+
+					while not dateFound and tableCount > 0 do					
+						i = i + 1
+						if (i >= tableCount) then
+							i = 0;
+							weekMultiplier = weekMultiplier + 1
+						end		
+
+						-- table.insert(actualDays, i)
+						actualDaysCount = actualDaysCount + 1
+						
+						-- Calculate the difference between the start day (e.g. sunday) and now (e.g. tuesday)
+						
+						local difference = weekMultiplier * 7 + actualDays[i]
+						
+						print('Testing day: ' .. tostring(byDay[(currentDay + difference - 1) % 7 + 1]))
+						
+						local newDate = os.time({ day = Date.day + difference, month = Date.month, year = Date.year})		
+
+						print('Testing new date against excluded dates ' .. os.date('%A %B %d %H:%M %Y', newDate))
+						
+						-- EXCLUDE DATES - THIS EXCLUDES ENTIRE MEETINGS - BUT SHOULD INSTEAD JUST SKIP TO THE NEXT MEETING
+				
+						local excludeString = s;
+						
+						local exdateMatch = 'EXDATE[^\n]+:(%d%d%d%d)(%d%d)(%d%d)'
+						local exdateMatchComplicated = 'EXDATE[^\n]+:(%d%d%d%d)(%d%d)(%d%d)T(%d%d)(%d%d)(%d%d)'
+						
+						local dateWasExcluded = false;
+
+						while (excludeString:match(exdateMatch) and not dateWasExcluded) do
+							local excludeDate = {}	
+
+							excludeDate.year, excludeDate.month, excludeDate.day, excludeDate.hour, excludeDate.min, excludeDate.sec = excludeString:match(exdateMatchComplicated)
+							
+							local didMatchDate = false;
+							
+							if (excludeDate.year == nil) then
+								-- Easy compare
+								excludeDate.year, excludeDate.month, excludeDate.day = excludeString:match(exdateMatch)
+								excludeString = s:gsub(exdateMatch, "")
+								
+								if (excludeDate.year == os.date('%y', newDate) and excludeDate.month == os.date('%m', newDate) and os.date('%d', newDate) == excludeDate.day) then
+									didMatchDate = true
+								end
+							else
+								-- Complicated compare
+								excludeString = s:gsub(exdateMatchComplicated, "")			
+								
+								if (os.date('%Y', newDate) == Date.year and os.date('%m', newDate) == excludeDate.month and os.date('%d', newDate) == excludeDate.day 
+									and excludeDate.hour == Date.hour and excludeDate.min == Date.min and excludeDate.sec == excludeDate.sec) then
+									didMatchDate = true
+								end
+							end						
+							
+							if (didMatchDate == true) then
+								dateWasExcluded = true;
+							end	
+
+							excludeString = s:gsub(exdateMatch, "")
+						end
+						
+						if (dateWasExcluded == false) then
+							dateFound = true;		
+							
+							Date.year = os.date('%Y', newDate)
+							Date.month = os.date('%m', newDate)
+							Date.day = os.date('%d', newDate)
+						end
+					end	
+						
 					return Date
 				
 				-- Yearly recurring events
